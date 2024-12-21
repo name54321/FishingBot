@@ -74,32 +74,17 @@ client.on("interactionCreate", async (interaction) => {
         await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
     }
 
-    if (interaction.customId === "fish_button") {
-        const userId = interaction.user.id;
-
-        if (!fishingData[today]) {
-            fishingData[today] = { discord: {}, external: {} };
-        }
-
-        if (fishingData[today].discord[userId] !== undefined) {
-            await interaction.reply({
-                content: "You have already marked your fishing as done today!",
-                ephemeral: true,
-            });
-        } else {
-            fishingData[today].discord[userId] = null;
-            saveData();
-
-            await interaction.reply({
-                content: "🎣 You marked your fishing as done for today!",
-                ephemeral: true,
-            });
-        }
-    }
-
     if (interaction.commandName === "fishfor") {
         const targetName = interaction.options.getString("target");
         const helper = interaction.member.displayName;
+
+        if (!targetName) {
+            await interaction.reply({
+                content: "Please specify a valid target to fish for!",
+                ephemeral: true,
+            });
+            return;
+        }
 
         if (!fishingData[today]) {
             fishingData[today] = { discord: {}, external: {} };
@@ -154,6 +139,29 @@ client.on("interactionCreate", async (interaction) => {
             content: `User ${targetName} is not recognized! Please enter a valid name.`,
             ephemeral: true,
         });
+    }
+
+    if (interaction.customId === "fish_button") {
+        const userId = interaction.user.id;
+
+        if (!fishingData[today]) {
+            fishingData[today] = { discord: {}, external: {} };
+        }
+
+        if (fishingData[today].discord[userId] !== undefined) {
+            await interaction.reply({
+                content: "You have already marked your fishing as done today!",
+                ephemeral: true,
+            });
+        } else {
+            fishingData[today].discord[userId] = null;
+            saveData();
+
+            await interaction.reply({
+                content: "🎣 You marked your fishing as done for today!",
+                ephemeral: true,
+            });
+        }
     }
 
     if (interaction.commandName === "checked") {
