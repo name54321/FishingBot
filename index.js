@@ -12,12 +12,6 @@ const moment = require("moment-timezone");
 const fs = require("fs");
 const http = require("http");
 
-// Create a simple server to keep Replit alive
-http.createServer((req, res) => {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("Bot is running!");
-}).listen(3000);
-
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
 });
