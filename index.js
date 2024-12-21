@@ -10,6 +10,8 @@ const { schedule } = require("node-cron");
 const moment = require("moment-timezone");
 const fs = require("fs");
 const http = require("http");
+const externalUsers = ["Grrkii", "WRNO_46", "m.yui", "yuu", "juni (^-^)"];
+
 
 // Create a simple server to keep Replit alive
 http.createServer((req, res) => {
@@ -38,11 +40,18 @@ const saveData = () => {
 
 // Reset data daily at Japan midnight
 schedule("0 15 * * *", () => {
-    // 15:00 UTC = Midnight JST
-    fishingData = {};
+    const today = moment().tz("Asia/Tokyo").format("YYYY-MM-DD");
+
+    // Reset fishing data for today and include external users
+    fishingData[today] = { discord: {}, external: {} };
+    externalUsers.forEach((user) => {
+        fishingData[today].external[user] = null; // External users start as not fished
+    });
+
     saveData();
-    console.log("Fishing data reset!");
+    console.log("Fishing data reset and external users populated!");
 });
+
 
 client.once("ready", () => {
     console.log(`Logged in as ${client.user.tag}`);
@@ -79,35 +88,39 @@ client.on("interactionCreate", async (interaction) => {
 
     // Slash command for "fishing for someone else"
     if (interaction.commandName === "fishfor") {
-        const targetUser = interaction.options.getUser("target"); // User being helped
-        const helperUser = interaction.user; // User helping
+        const today = moment().tz("Asia/Tokyo").format("YYYY-MM-DD");
+        const targetName = interaction.options.getString("target");
+        const helper = interaction.user.displayName; // User who is helping
 
-        if (!targetUser) {
-            await interaction.reply({
-                content: "Please specify a valid user to fish for!",
-                ephemeral: true,
-            });
-            return;
+        if (!fishingData[today]) {
+            fishingData[today] = { discord: {}, external: {} };
         }
 
-        // Check if the target user already fished
-        if (fishingData[today] && fishingData[today][targetUser.id]) {
-            await interaction.reply({
-                content: `${targetUser.username} has already fished today!`,
-                ephemeral: true,
-            });
-        } else {
-            // Add to fishing data
-            if (!fishingData[today]) fishingData[today] = {};
-            fishingData[today][targetUser.id] = helperUser.id;
+        // Handle external users
+        if (externalUsers.includes(targetName)) {
+            if (fishingData[today].external[targetName] !== null) {
+                await interaction.reply({
+                    content: `${targetName} has already been marked as fished for today!`,
+                    ephemeral: true,
+                });
+                return;
+            }
+
+            fishingData[today].external[targetName] = helper;
             saveData();
 
             await interaction.reply({
-                content: `🎣 You helped ${targetUser.username} fish for today!`,
+                content: `🎣 You helped ${targetName} fish for today!`,
+                ephemeral: true,
+            });
+        } else {
+            await interaction.reply({
+                content: `User ${targetName} is not recognized! Please enter a valid name.`,
                 ephemeral: true,
             });
         }
     }
+
 
     // Button interaction
     if (interaction.customId === "fish_button") {
@@ -133,22 +146,31 @@ client.on("interactionCreate", async (interaction) => {
 
     // Slash command to check who has fished
     if (interaction.commandName === "checked") {
-        const guild = interaction.guild;
-        const members = await guild.members.fetch();
-
-        const todayData = fishingData[today] || {};
+        const today = moment().tz("Asia/Tokyo").format("YYYY-MM-DD");
+        const todayData = fishingData[today] || { discord: {}, external: {} };
 
         const fished = [];
         const notFished = [];
 
+        // Process external users
+        externalUsers.forEach((user) => {
+            if (todayData.external[user] !== null) {
+                fished.push(`${user} (helped by ${todayData.external[user]})`);
+            } else {
+                notFished.push(user);
+            }
+        });
+
+        // Process Discord users
+        const members = await interaction.guild.members.fetch();
         members.forEach((member) => {
             if (!member.user.bot) {
-                const name = member.displayName; // Prefer nickname, fallback to username
-                if (todayData[member.user.id] !== undefined) {
-                    const helperId = todayData[member.user.id];
+                const name = member.displayName;
+                if (todayData.discord[member.user.id] !== undefined) {
+                    const helperId = todayData.discord[member.user.id];
                     const helper = helperId
                         ? ` (${members.get(helperId)?.displayName || "Unknown"})`
-                        : ""; // Show who helped, if applicable
+                        : "";
                     fished.push(`${name}${helper}`);
                 } else {
                     notFished.push(name);
@@ -156,7 +178,7 @@ client.on("interactionCreate", async (interaction) => {
             }
         });
 
-        const totalMembers = fished.length + notFished.length; // Total eligible members
+        const totalMembers = fished.length + notFished.length;
         const embed = new EmbedBuilder()
             .setTitle("Fishing Status")
             .setDescription(`Here's the fishing status for today (${today}):`)
@@ -197,13 +219,14 @@ client.on("ready", async () => {
             description: "Help someone else fish.",
             options: [
                 {
-                    type: 6, // User type
+                    type: 3, // String type
                     name: "target",
-                    description: "The user you want to help fish",
+                    description: "The name of the user to fish for (Discord or external)",
                     required: true,
                 },
             ],
-        },
+        }
+,
         {
             name: "checked",
             description: "Check who has fished and who has not.",
