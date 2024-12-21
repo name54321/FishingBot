@@ -12,9 +12,6 @@ const {
 const { schedule } = require("node-cron");
 const moment = require("moment-timezone");
 const fs = require("fs");
-const http = require("http");
-
-
 
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
