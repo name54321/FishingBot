@@ -1,4 +1,4 @@
-require('dotenv').config();
+require("dotenv").config();
 const {
     Client,
     GatewayIntentBits,
@@ -11,10 +11,10 @@ const { schedule } = require("node-cron");
 const moment = require("moment-timezone");
 const fs = require("fs");
 const http = require("http");
+
 const externalUsers = ["Grrkii", "WRNO_46", "m.yui", "yuu", "juni (^-^)"];
 
-
-// Create a simple server to keep Replit alive
+// Create a simple server to keep EC2 alive
 http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("Bot is running!");
@@ -33,17 +33,13 @@ if (fs.existsSync("./fishingData.json")) {
 
 // Save data periodically
 const saveData = () => {
-    fs.writeFileSync(
-        "./fishingData.json",
-        JSON.stringify(fishingData, null, 2),
-    );
+    fs.writeFileSync("./fishingData.json", JSON.stringify(fishingData, null, 2));
 };
 
 // Reset data daily at Japan midnight
 schedule("0 15 * * *", () => {
     const today = moment().tz("Asia/Tokyo").format("YYYY-MM-DD");
 
-    // Reset fishing data for today and include external users
     fishingData[today] = { discord: {}, external: {} };
     externalUsers.forEach((user) => {
         fishingData[today].external[user] = null; // External users start as not fished
@@ -53,76 +49,87 @@ schedule("0 15 * * *", () => {
     console.log("Fishing data reset and external users populated!");
 });
 
-
 client.once("ready", () => {
     console.log(`Logged in as ${client.user.tag}`);
 });
 
-// Handle interactions
 client.on("interactionCreate", async (interaction) => {
     if (!interaction.isButton() && !interaction.isCommand()) return;
 
     const today = moment().tz("Asia/Tokyo").format("YYYY-MM-DD");
 
-    // Slash command for "fishing"
     if (interaction.commandName === "fish") {
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId("fish_button")
                 .setLabel("🎣 Mark Fishing as Done")
-                .setStyle(ButtonStyle.Primary),
+                .setStyle(ButtonStyle.Primary)
         );
 
         const embed = new EmbedBuilder()
             .setTitle("Fishing Activity")
-            .setDescription(
-                "Click the button below to mark your fishing as done for the day.",
-            )
+            .setDescription("Click the button below to mark your fishing as done for the day.")
             .setColor("Aqua");
 
-        await interaction.reply({
-            embeds: [embed],
-            components: [row],
-            ephemeral: true,
-        });
+        await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
     }
 
-    // Slash command for "fishing for someone else"
-    if (interaction.commandName === "fishfor") {
-        const today = moment().tz("Asia/Tokyo").format("YYYY-MM-DD");
-        const targetName = interaction.options.getString("target");
-        const helper = interaction.member.displayName; // User who is helping
+    if (interaction.customId === "fish_button") {
+        const userId = interaction.user.id;
 
         if (!fishingData[today]) {
             fishingData[today] = { discord: {}, external: {} };
         }
 
-        // Check if the target is an external user
-        if (externalUsers.includes(targetName)) {
-            if (fishingData[today].external[targetName] !== null) {
+        if (fishingData[today].discord[userId] !== undefined) {
+            await interaction.reply({
+                content: "You have already marked your fishing as done today!",
+                ephemeral: true,
+            });
+        } else {
+            fishingData[today].discord[userId] = null;
+            saveData();
+
+            await interaction.reply({
+                content: "🎣 You marked your fishing as done for today!",
+                ephemeral: true,
+            });
+        }
+    }
+
+    if (interaction.commandName === "fishfor") {
+        const targetName = interaction.options.getString("target");
+        const helper = interaction.member.displayName;
+
+        if (!fishingData[today]) {
+            fishingData[today] = { discord: {}, external: {} };
+        }
+
+        if (externalUsers.map((u) => u.toLowerCase()).includes(targetName.toLowerCase())) {
+            const normalizedTargetName = externalUsers.find(
+                (u) => u.toLowerCase() === targetName.toLowerCase()
+            );
+
+            if (fishingData[today].external[normalizedTargetName] !== null) {
                 await interaction.reply({
-                    content: `${targetName} has already been marked as fished for today!`,
+                    content: `${normalizedTargetName} has already been marked as fished for today!`,
                     ephemeral: true,
                 });
                 return;
             }
 
-            // Record the helper for the external user
-            fishingData[today].external[targetName] = helper;
+            fishingData[today].external[normalizedTargetName] = helper;
             saveData();
 
             await interaction.reply({
-                content: `🎣 You helped ${targetName} fish for today!`,
+                content: `🎣 You helped ${normalizedTargetName} fish for today!`,
                 ephemeral: true,
             });
             return;
         }
 
-        // Check if the target is a Discord user
         const members = await interaction.guild.members.fetch();
-        const discordUser = members.find(
-            (member) => member.displayName === targetName
-        );
+        const discordUser = members.find((member) => member.displayName === targetName);
 
         if (discordUser) {
             if (fishingData[today].discord[discordUser.user.id] !== undefined) {
@@ -133,7 +140,6 @@ client.on("interactionCreate", async (interaction) => {
                 return;
             }
 
-            // Record the helper for the Discord user
             fishingData[today].discord[discordUser.user.id] = helper;
             saveData();
 
@@ -144,46 +150,18 @@ client.on("interactionCreate", async (interaction) => {
             return;
         }
 
-        // If no match found
         await interaction.reply({
             content: `User ${targetName} is not recognized! Please enter a valid name.`,
             ephemeral: true,
         });
     }
 
-
-
-    // Button interaction
-    if (interaction.customId === "fish_button") {
-        const userId = interaction.user.id;
-
-        // Check if the user already marked for today
-        if (fishingData[today] && fishingData[today][userId]) {
-            await interaction.reply({
-                content: "You have already marked your fishing as done today!",
-                ephemeral: true,
-            });
-        } else {
-            if (!fishingData[today]) fishingData[today] = {};
-            fishingData[today][userId] = null; // User fished themselves
-            saveData();
-
-            await interaction.reply({
-                content: "🎣 You marked your fishing as done for today!",
-                ephemeral: true,
-            });
-        }
-    }
-
-    // Slash command to check who has fished
     if (interaction.commandName === "checked") {
-        const today = moment().tz("Asia/Tokyo").format("YYYY-MM-DD");
         const todayData = fishingData[today] || { discord: {}, external: {} };
 
         const fished = [];
         const notFished = [];
 
-        // Process external users
         externalUsers.forEach((user) => {
             if (todayData.external[user] !== null) {
                 fished.push(`${user} (helped by ${todayData.external[user]})`);
@@ -192,7 +170,6 @@ client.on("interactionCreate", async (interaction) => {
             }
         });
 
-        // Process Discord users
         const members = await interaction.guild.members.fetch();
         members.forEach((member) => {
             if (!member.user.bot) {
@@ -216,20 +193,14 @@ client.on("interactionCreate", async (interaction) => {
             .addFields(
                 {
                     name: `🎣 Fished (${fished.length}/${totalMembers}):`,
-                    value:
-                        fished.length > 0
-                            ? fished.join("\n")
-                            : "No one has fished yet.",
+                    value: fished.length > 0 ? fished.join("\n") : "No one has fished yet.",
                     inline: false,
                 },
                 {
                     name: `❌ Not Fished (${notFished.length}/${totalMembers}):`,
-                    value:
-                        notFished.length > 0
-                            ? notFished.join("\n")
-                            : "Everyone has fished!",
+                    value: notFished.length > 0 ? notFished.join("\n") : "Everyone has fished!",
                     inline: false,
-                },
+                }
             )
             .setFooter({ text: `Total: ${totalMembers} members` })
             .setColor("Green");
@@ -238,7 +209,6 @@ client.on("interactionCreate", async (interaction) => {
     }
 });
 
-// Register commands
 client.on("ready", async () => {
     const commands = [
         {
@@ -250,15 +220,13 @@ client.on("ready", async () => {
             description: "Help someone else fish.",
             options: [
                 {
-                    type: 3, // String type
+                    type: 3,
                     name: "target",
                     description: "The name of the user to fish for (Discord or external)",
                     required: true,
                 },
             ],
-        }
-
-,
+        },
         {
             name: "checked",
             description: "Check who has fished and who has not.",
@@ -269,5 +237,4 @@ client.on("ready", async () => {
     console.log("Commands registered!");
 });
 
-// Log in the bot
 client.login(process.env.TOKEN);
