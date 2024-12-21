@@ -1,3 +1,4 @@
+require('dotenv').config();
 const {
     Client,
     GatewayIntentBits,
@@ -90,13 +91,13 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.commandName === "fishfor") {
         const today = moment().tz("Asia/Tokyo").format("YYYY-MM-DD");
         const targetName = interaction.options.getString("target");
-        const helper = interaction.user.displayName; // User who is helping
+        const helper = interaction.member.displayName; // User who is helping
 
         if (!fishingData[today]) {
             fishingData[today] = { discord: {}, external: {} };
         }
 
-        // Handle external users
+        // Check if the target is an external user
         if (externalUsers.includes(targetName)) {
             if (fishingData[today].external[targetName] !== null) {
                 await interaction.reply({
@@ -106,6 +107,7 @@ client.on("interactionCreate", async (interaction) => {
                 return;
             }
 
+            // Record the helper for the external user
             fishingData[today].external[targetName] = helper;
             saveData();
 
@@ -113,13 +115,42 @@ client.on("interactionCreate", async (interaction) => {
                 content: `🎣 You helped ${targetName} fish for today!`,
                 ephemeral: true,
             });
-        } else {
+            return;
+        }
+
+        // Check if the target is a Discord user
+        const members = await interaction.guild.members.fetch();
+        const discordUser = members.find(
+            (member) => member.displayName === targetName
+        );
+
+        if (discordUser) {
+            if (fishingData[today].discord[discordUser.user.id] !== undefined) {
+                await interaction.reply({
+                    content: `${targetName} has already been marked as fished for today!`,
+                    ephemeral: true,
+                });
+                return;
+            }
+
+            // Record the helper for the Discord user
+            fishingData[today].discord[discordUser.user.id] = helper;
+            saveData();
+
             await interaction.reply({
-                content: `User ${targetName} is not recognized! Please enter a valid name.`,
+                content: `🎣 You helped ${targetName} fish for today!`,
                 ephemeral: true,
             });
+            return;
         }
+
+        // If no match found
+        await interaction.reply({
+            content: `User ${targetName} is not recognized! Please enter a valid name.`,
+            ephemeral: true,
+        });
     }
+
 
 
     // Button interaction
@@ -226,6 +257,7 @@ client.on("ready", async () => {
                 },
             ],
         }
+
 ,
         {
             name: "checked",
